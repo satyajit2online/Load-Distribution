@@ -1,0 +1,5 @@
+{
+  "name": "RCC Beam Designer Pro",
+  "description": "A comprehensive Reinforced Cement Concrete (RCC) beam design tool. Calculates load transfer from slabs (Trapezoidal/Triangular), analyzes shears and moments, and designs reinforcement (Ast) and stirrups. Features AI-powered design validation.",
+  "requestFramePermissions": []
+}
