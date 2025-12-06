@@ -22,6 +22,12 @@ export interface SlabSideConfig {
   supportEdge: BeamSupportEdge; // Does this beam support the Short edge or Long edge of the slab?
 }
 
+export interface PointLoad {
+  id: string;
+  value: number; // kN (Characteristic)
+  distance: number; // m from left support
+}
+
 export interface DesignInputs {
   // Slab Config
   slabThickness: number; // mm
@@ -31,6 +37,9 @@ export interface DesignInputs {
   leftSlab: SlabSideConfig;
   rightSlab: SlabSideConfig;
   
+  // Point Loads
+  pointLoads: PointLoad[];
+
   // Beam
   beamWidth: number; // mm
   beamDepth: number; // mm
@@ -40,6 +49,7 @@ export interface DesignInputs {
   // Wall
   wallHeight: number; // m
   wallThickness: number; // mm
+  masonryDensity: number; // kN/m3
   
   // Materials
   fck: ConcreteGrade;
@@ -57,12 +67,15 @@ export interface LoadResult {
   beamSelfWeight: number; // kN/m
   wallLoad: number; // kN/m
   totalDesignUDL: number; // kN/m (Factored)
+  factoredPointLoads: { value: number; distance: number }[]; // kN, m (Factored)
 }
 
 export interface AnalysisResult {
   maxMoment: number; // kNm
   maxShear: number; // kN
   effectiveDepth: number; // mm
+  momentData: { x: number; val: number }[]; // For charts
+  shearData: { x: number; val: number }[]; // For charts
 }
 
 export interface DesignResult {
@@ -84,4 +97,13 @@ export interface DesignResult {
   modificationFactorKt: number;
   allowableLbyD: number;
   deflectionCheckPassed: boolean;
+}
+
+export interface SavedDesign {
+  id: string;
+  name: string;
+  date: string;
+  inputs: DesignInputs;
+  design: DesignResult;
+  loads: { totalDesignUDL: number };
 }

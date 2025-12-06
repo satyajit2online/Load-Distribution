@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { ConcreteGrade, DesignInputs, SteelGrade, SlabSideConfig } from './types';
+import { ConcreteGrade, DesignInputs, SteelGrade, SlabSideConfig, PointLoad, SavedDesign } from './types';
 import { calculateLoads, analyzeBeam, designBeam } from './utils/rccCalculations';
 import { generateDesignReport } from './services/geminiService';
 import { MomentDiagram, ShearDiagram, BeamLoadDiagram } from './components/Diagrams';
 import { CrossSection } from './components/CrossSection';
-import { Calculator, FileText, AlertTriangle, CheckCircle, BrainCircuit, Info } from 'lucide-react';
+import { Calculator, FileText, AlertTriangle, CheckCircle, BrainCircuit, Info, Plus, Trash2, Save, Table, Download } from 'lucide-react';
 
 const App: React.FC = () => {
   const [inputs, setInputs] = useState<DesignInputs>({
@@ -26,6 +26,8 @@ const App: React.FC = () => {
       ly: 4.5,
       supportEdge: 'Long'
     },
+    
+    pointLoads: [],
 
     beamWidth: 230,
     beamDepth: 450,
@@ -33,6 +35,7 @@ const App: React.FC = () => {
     effectiveCover: 25,
     wallHeight: 3.0,
     wallThickness: 230,
+    masonryDensity: 20, // Default 20 kN/m3
     fck: ConcreteGrade.M20,
     fy: SteelGrade.Fe500,
     mainBarDia: 16,
@@ -41,6 +44,7 @@ const App: React.FC = () => {
 
   const [aiReport, setAiReport] = useState<string | null>(null);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [savedDesigns, setSavedDesigns] = useState<SavedDesign[]>([]);
 
   const loads = calculateLoads(inputs);
   const analysis = analyzeBeam(inputs, loads);
@@ -62,11 +66,53 @@ const App: React.FC = () => {
     setAiReport(null);
   };
 
+  const addPointLoad = () => {
+    const newLoad: PointLoad = {
+      id: Math.random().toString(36).substr(2, 9),
+      value: 10,
+      distance: inputs.beamClearSpan / 2
+    };
+    setInputs(prev => ({ ...prev, pointLoads: [...prev.pointLoads, newLoad] }));
+    setAiReport(null);
+  };
+
+  const updatePointLoad = (id: string, field: keyof PointLoad, value: number) => {
+    setInputs(prev => ({
+      ...prev,
+      pointLoads: prev.pointLoads.map(pl => pl.id === id ? { ...pl, [field]: value } : pl)
+    }));
+    setAiReport(null);
+  };
+
+  const removePointLoad = (id: string) => {
+    setInputs(prev => ({
+      ...prev,
+      pointLoads: prev.pointLoads.filter(pl => pl.id !== id)
+    }));
+    setAiReport(null);
+  };
+
   const handleAiConsultation = async () => {
     setIsGeneratingAi(true);
     const report = await generateDesignReport(inputs, loads, analysis, design);
     setAiReport(report);
     setIsGeneratingAi(false);
+  };
+
+  const handleSaveDesign = () => {
+    const newDesign: SavedDesign = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: `Beam B${savedDesigns.length + 1}`,
+      date: new Date().toLocaleDateString(),
+      inputs: { ...inputs }, // Snapshot of inputs
+      design: { ...design }, // Snapshot of result
+      loads: { totalDesignUDL: loads.totalDesignUDL }
+    };
+    setSavedDesigns(prev => [...prev, newDesign]);
+  };
+
+  const deleteSavedDesign = (id: string) => {
+    setSavedDesigns(prev => prev.filter(d => d.id !== id));
   };
 
   const renderSlabConfig = (side: 'leftSlab' | 'rightSlab', title: string) => {
@@ -217,6 +263,44 @@ const App: React.FC = () => {
             </div>
           </section>
 
+           {/* Point Loads Configuration */}
+           <section className="space-y-3">
+            <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold border-b border-slate-700 pb-1 flex justify-between items-center">
+               Point Loads
+               <button onClick={addPointLoad} className="bg-blue-600 hover:bg-blue-500 text-white rounded-full p-0.5">
+                 <Plus size={14} />
+               </button>
+            </h2>
+            <div className="space-y-2">
+               {inputs.pointLoads.length === 0 && <p className="text-xs text-slate-500 italic text-center py-2">No point loads defined.</p>}
+               {inputs.pointLoads.map((pl) => (
+                 <div key={pl.id} className="flex gap-2 items-center bg-slate-800 p-2 rounded">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-slate-400 block">Load (kN)</label>
+                      <input 
+                        type="number" step="1"
+                        value={pl.value}
+                        onChange={(e) => updatePointLoad(pl.id, 'value', parseFloat(e.target.value))}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-1 text-xs focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-[10px] text-slate-400 block">Dist (m)</label>
+                      <input 
+                        type="number" step="0.1"
+                        value={pl.distance}
+                        onChange={(e) => updatePointLoad(pl.id, 'distance', parseFloat(e.target.value))}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-1 text-xs focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <button onClick={() => removePointLoad(pl.id)} className="text-red-400 hover:text-red-300 mt-3 p-1">
+                       <Trash2 size={14} />
+                    </button>
+                 </div>
+               ))}
+            </div>
+          </section>
+
            {/* Beam Geometry */}
            <section className="space-y-3">
             <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold border-b border-slate-700 pb-1">Beam Geometry & Wall</h2>
@@ -258,7 +342,7 @@ const App: React.FC = () => {
                 />
               </div>
             </div>
-             <div className="grid grid-cols-2 gap-4 mt-2">
+             <div className="grid grid-cols-3 gap-2 mt-2">
                <div>
                 <label className="text-xs text-slate-400">Wall Ht (m)</label>
                 <input 
@@ -275,6 +359,16 @@ const App: React.FC = () => {
                   value={inputs.wallThickness} 
                   onChange={(e) => handleInputChange('wallThickness', e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-sm focus:border-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400">Density (kN/m³)</label>
+                <input 
+                  type="number" 
+                  value={inputs.masonryDensity} 
+                  onChange={(e) => handleInputChange('masonryDensity', e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-sm focus:border-blue-500 outline-none"
+                  title="Brick: ~20, AAC: ~8"
                 />
               </div>
              </div>
@@ -342,9 +436,20 @@ const App: React.FC = () => {
       <div className="w-full md:w-2/3 p-4 md:p-8 overflow-y-auto">
         
         {/* Header Stats */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+           <h2 className="text-2xl font-bold text-slate-800">Design Results</h2>
+           <button 
+             onClick={handleSaveDesign}
+             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm"
+           >
+             <Save className="w-4 h-4" />
+             Save to Schedule
+           </button>
+        </div>
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-              <p className="text-xs text-slate-500">Total Factored Load</p>
+              <p className="text-xs text-slate-500">Total Factored UDL</p>
               <p className="text-2xl font-bold text-slate-800">{loads.totalDesignUDL.toFixed(2)} <span className="text-sm font-normal text-slate-400">kN/m</span></p>
            </div>
            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
@@ -373,7 +478,7 @@ const App: React.FC = () => {
                   <tr>
                     <th className="py-2 px-4 text-left font-medium text-slate-500">Source</th>
                     <th className="py-2 px-4 text-left font-medium text-slate-500">Calculation logic</th>
-                    <th className="py-2 px-4 text-right font-medium text-slate-500">Value (kN/m)</th>
+                    <th className="py-2 px-4 text-right font-medium text-slate-500">Value</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -384,7 +489,7 @@ const App: React.FC = () => {
                           inputs.leftSlab.type === 'OneWay' ? 'One-Way (Lx/2)' : 
                           inputs.leftSlab.supportEdge === 'Short' ? 'Two-Way Triangular (Lx/3)' : 'Two-Way Trapezoidal'}
                       </td>
-                      <td className="py-2 px-4 text-right font-mono text-slate-700">{loads.udlFromLeftSlab.toFixed(2)}</td>
+                      <td className="py-2 px-4 text-right font-mono text-slate-700">{loads.udlFromLeftSlab.toFixed(2)} kN/m</td>
                    </tr>
                    <tr>
                       <td className="py-2 px-4 text-slate-700">Right Slab Load</td>
@@ -393,22 +498,31 @@ const App: React.FC = () => {
                           inputs.rightSlab.type === 'OneWay' ? 'One-Way (Lx/2)' : 
                           inputs.rightSlab.supportEdge === 'Short' ? 'Two-Way Triangular (Lx/3)' : 'Two-Way Trapezoidal'}
                       </td>
-                      <td className="py-2 px-4 text-right font-mono text-slate-700">{loads.udlFromRightSlab.toFixed(2)}</td>
+                      <td className="py-2 px-4 text-right font-mono text-slate-700">{loads.udlFromRightSlab.toFixed(2)} kN/m</td>
                    </tr>
                    <tr>
                       <td className="py-2 px-4 text-slate-700">Beam Self Weight</td>
                       <td className="py-2 px-4 text-slate-500 text-xs">{inputs.beamWidth} x {inputs.beamDepth} x 25 kN/m³</td>
-                      <td className="py-2 px-4 text-right font-mono text-slate-700">{loads.beamSelfWeight.toFixed(2)}</td>
+                      <td className="py-2 px-4 text-right font-mono text-slate-700">{loads.beamSelfWeight.toFixed(2)} kN/m</td>
                    </tr>
                    <tr>
                       <td className="py-2 px-4 text-slate-700">Wall Load</td>
-                      <td className="py-2 px-4 text-slate-500 text-xs">{inputs.wallThickness}mm x {inputs.wallHeight}m x 20 kN/m³</td>
-                      <td className="py-2 px-4 text-right font-mono text-slate-700">{loads.wallLoad.toFixed(2)}</td>
+                      <td className="py-2 px-4 text-slate-500 text-xs">{inputs.wallThickness}mm x {inputs.wallHeight}m x {inputs.masonryDensity} kN/m³</td>
+                      <td className="py-2 px-4 text-right font-mono text-slate-700">{loads.wallLoad.toFixed(2)} kN/m</td>
                    </tr>
+                   {loads.factoredPointLoads.length > 0 && (
+                      <tr className="bg-amber-50">
+                        <td className="py-2 px-4 text-slate-700">Point Loads (Factored)</td>
+                        <td className="py-2 px-4 text-slate-500 text-xs">Applied manually</td>
+                        <td className="py-2 px-4 text-right font-mono text-slate-700">
+                          {loads.factoredPointLoads.map(p => `${p.value.toFixed(1)}kN@${p.distance}m`).join(', ')}
+                        </td>
+                      </tr>
+                   )}
                    <tr className="bg-slate-50 font-bold">
-                      <td className="py-2 px-4 text-slate-900">Total Factored (x1.5)</td>
+                      <td className="py-2 px-4 text-slate-900">Total Design UDL</td>
                       <td className="py-2 px-4"></td>
-                      <td className="py-2 px-4 text-right font-mono text-blue-600">{loads.totalDesignUDL.toFixed(2)}</td>
+                      <td className="py-2 px-4 text-right font-mono text-blue-600">{loads.totalDesignUDL.toFixed(2)} kN/m</td>
                    </tr>
                 </tbody>
               </table>
@@ -418,11 +532,11 @@ const App: React.FC = () => {
         {/* Visualization Grid */}
         <div className="grid grid-cols-1 gap-6 mb-8">
              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <MomentDiagram span={inputs.beamClearSpan} maxMoment={analysis.maxMoment} maxShear={analysis.maxShear} load={loads.totalDesignUDL} />
-                <BeamLoadDiagram span={inputs.beamClearSpan} load={loads.totalDesignUDL} />
+                <MomentDiagram data={analysis.momentData} />
+                <BeamLoadDiagram span={inputs.beamClearSpan} udl={loads.totalDesignUDL} pointLoads={loads.factoredPointLoads} />
              </div>
              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                 <ShearDiagram span={inputs.beamClearSpan} maxMoment={analysis.maxMoment} maxShear={analysis.maxShear} load={loads.totalDesignUDL} />
+                 <ShearDiagram data={analysis.shearData} />
                  <CrossSection 
                    width={inputs.beamWidth} 
                    depth={inputs.beamDepth} 
@@ -534,6 +648,71 @@ const App: React.FC = () => {
                   </div>
                </div>
             </div>
+        </div>
+
+        {/* Design Schedule */}
+        <div className="mb-8">
+           <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+             <Table className="w-5 h-5 text-slate-400" />
+             Design Schedule
+           </h3>
+           
+           {savedDesigns.length === 0 ? (
+             <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl p-8 text-center text-slate-500">
+               No designs saved yet. Click "Save to Schedule" to add the current design here.
+             </div>
+           ) : (
+             <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
+                <table className="min-w-full bg-white text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="py-3 px-4 text-left font-semibold text-slate-600">ID</th>
+                      <th className="py-3 px-4 text-left font-semibold text-slate-600">Span</th>
+                      <th className="py-3 px-4 text-left font-semibold text-slate-600">Size (mm)</th>
+                      <th className="py-3 px-4 text-left font-semibold text-slate-600">Reinforcement</th>
+                      <th className="py-3 px-4 text-left font-semibold text-slate-600">Stirrups</th>
+                      <th className="py-3 px-4 text-left font-semibold text-slate-600">Status</th>
+                      <th className="py-3 px-4 text-center font-semibold text-slate-600">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {savedDesigns.map((d) => (
+                      <tr key={d.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-3 px-4 font-bold text-slate-700">{d.name}</td>
+                        <td className="py-3 px-4 text-slate-600">{d.inputs.beamClearSpan}m</td>
+                        <td className="py-3 px-4 text-slate-600">{d.inputs.beamWidth} x {d.inputs.beamDepth}</td>
+                        <td className="py-3 px-4 text-slate-600">
+                          {d.design.numberOfBars} - T{d.inputs.mainBarDia}
+                        </td>
+                        <td className="py-3 px-4 text-slate-600">
+                          {d.design.stirrupSpacing > 0 
+                            ? `T${d.inputs.stirrupBarDia} @ ${d.design.stirrupSpacing}mm` 
+                            : 'Failed'}
+                        </td>
+                        <td className="py-3 px-4">
+                           <span className={`px-2 py-1 rounded text-xs font-bold ${
+                             !d.design.isDoublyReinforced && d.design.deflectionCheckPassed && d.design.stirrupSpacing > 0
+                               ? 'bg-green-100 text-green-700' 
+                               : 'bg-red-100 text-red-700'
+                           }`}>
+                             {!d.design.isDoublyReinforced && d.design.deflectionCheckPassed && d.design.stirrupSpacing > 0 ? 'PASS' : 'FAIL'}
+                           </span>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <button 
+                            onClick={() => deleteSavedDesign(d.id)}
+                            className="text-slate-400 hover:text-red-500 transition-colors p-1"
+                            title="Delete"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+             </div>
+           )}
         </div>
 
         {/* AI Review Section */}

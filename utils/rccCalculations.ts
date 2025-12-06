@@ -1,7 +1,6 @@
 import { AnalysisResult, ConcreteGrade, DesignInputs, DesignResult, LoadResult, SteelGrade, SlabSideConfig } from '../types';
 
 const CONCRETE_DENSITY = 25; // kN/m3
-const MASONRY_DENSITY = 20; // kN/m3
 const PARTIAL_SAFETY_FACTOR_LOAD = 1.5;
 
 // Interpolation helper for Tau_c (Table 19 IS 456)
@@ -84,11 +83,17 @@ export const calculateLoads = (inputs: DesignInputs): LoadResult => {
   
   // 4. Wall Load
   const wallThickM = inputs.wallThickness / 1000;
-  const wallLoad = wallThickM * inputs.wallHeight * MASONRY_DENSITY;
+  const wallLoad = wallThickM * inputs.wallHeight * inputs.masonryDensity;
   
   // 5. Total Factored Load
   const totalServiceLoad = udlTotalSlab + beamSelfWeight + wallLoad;
   const totalDesignUDL = totalServiceLoad * PARTIAL_SAFETY_FACTOR_LOAD;
+
+  // 6. Point Loads (Factored)
+  const factoredPointLoads = inputs.pointLoads.map(pl => ({
+    value: pl.value * PARTIAL_SAFETY_FACTOR_LOAD,
+    distance: pl.distance
+  }));
   
   return {
     slabSelfWeight,
@@ -98,22 +103,80 @@ export const calculateLoads = (inputs: DesignInputs): LoadResult => {
     udlTotalSlab,
     beamSelfWeight,
     wallLoad,
-    totalDesignUDL
+    totalDesignUDL,
+    factoredPointLoads
   };
 };
 
 export const analyzeBeam = (inputs: DesignInputs, loads: LoadResult): AnalysisResult => {
   const L = inputs.beamClearSpan;
-  const w = loads.totalDesignUDL;
+  const w = loads.totalDesignUDL; // Factored UDL (kN/m)
+  const P = loads.factoredPointLoads; // Array of {value, distance}
+
+  // Calculate Reactions (Taking moments about Left Support A)
+  // Rb * L = (w * L * L/2) + Sum(Pi * xi)
+  let sumPointLoadMoments = 0;
+  let sumPointLoads = 0;
+  P.forEach(p => {
+    sumPointLoadMoments += p.value * p.distance;
+    sumPointLoads += p.value;
+  });
+
+  const momentUDL = w * L * (L / 2);
+  const Rb = (momentUDL + sumPointLoadMoments) / L;
+  const Ra = (w * L) + sumPointLoads - Rb;
+
+  // Generate Data for Diagrams & Find Max Values
+  const segments = 100;
+  const momentData = [];
+  const shearData = [];
+  let maxMoment = 0;
+  let maxShear = 0;
+
+  for (let i = 0; i <= segments; i++) {
+    const x = (i / segments) * L;
+    
+    // Shear V(x) = Ra - w*x - Sum(Pi where di < x)
+    let shearVal = Ra - (w * x);
+    
+    // Shear Logic: strictly subtract if d < x. 
+    let shearLoadCorrection = 0;
+    P.forEach(p => {
+       if (p.distance < x) { // Load is to the left
+         shearLoadCorrection += p.value;
+       } else if (Math.abs(p.distance - x) < 0.001) {
+          // Exactly at the load. Shear diagram has two values here. 
+          shearLoadCorrection += p.value;
+       }
+    });
+
+    const Vx = shearVal - shearLoadCorrection;
+
+    // Moment M(x) = Ra*x - w*x^2/2 - Sum(Pi * (x-di))
+    let momentLoadCorrection = 0;
+    P.forEach(p => {
+       if (p.distance < x) {
+         momentLoadCorrection += p.value * (x - p.distance);
+       }
+    });
+    const Mx = (Ra * x) - (w * x * x / 2) - momentLoadCorrection;
+
+    // Update Max
+    if (Math.abs(Mx) > Math.abs(maxMoment)) maxMoment = Math.abs(Mx);
+    if (Math.abs(Vx) > Math.abs(maxShear)) maxShear = Math.abs(Vx);
+
+    momentData.push({ x, val: Mx });
+    shearData.push({ x, val: Vx });
+  }
   
-  const maxMoment = (w * L * L) / 8;
-  const maxShear = (w * L) / 2;
   const effectiveDepth = inputs.beamDepth - inputs.effectiveCover;
   
   return {
     maxMoment,
     maxShear,
-    effectiveDepth
+    effectiveDepth,
+    momentData,
+    shearData
   };
 };
 
@@ -137,16 +200,10 @@ const checkDeflection = (
   const fs = 0.58 * fy * (astRequired / astProvided);
 
   // Modification Factor (Kt) for Tension Reinforcement (IS 456 Fig 4)
-  // Formula approximation: 1 / (0.225 + 0.0032*fs - 0.625*log10(pt))
-  // Ensuring denominator is valid and pt is handled correctly for log10
-  
-  // Guard against very low Pt causing math errors
   const safePt = Math.max(pt, 0.1); 
   
   let denominator = 0.225 + (0.0032 * fs) - (0.625 * Math.log10(safePt));
   
-  // Kt cannot be greater than 2.0 (code limit implied in charts)
-  // If denominator is <= 0 or results in high value, clamp it.
   let kt = 1.0;
   if (denominator > 0) {
       kt = 1 / denominator;

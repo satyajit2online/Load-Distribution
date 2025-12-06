@@ -20,6 +20,10 @@ export const generateDesignReport = async (
       return `${side} Side: Two-Way Slab (Lx=${config.lx}m, Ly=${config.ly}m) supported on ${config.supportEdge} Edge (${config.supportEdge === 'Short' ? 'Triangular' : 'Trapezoidal'} Load)`;
     };
 
+    const pointLoadsDesc = inputs.pointLoads.length > 0 
+      ? inputs.pointLoads.map(p => `${p.value}kN at ${p.distance}m`).join(', ')
+      : "None";
+
     const context = `
     You are a Senior Structural Engineer. Review the following Reinforced Concrete Beam design.
     
@@ -29,8 +33,9 @@ export const generateDesignReport = async (
     - Slab Config:
       - ${describeSlab('Left', inputs.leftSlab)}
       - ${describeSlab('Right', inputs.rightSlab)}
+    - Point Loads: ${pointLoadsDesc}
     - Slab Loads: Thickness=${inputs.slabThickness}mm, Live=${inputs.liveLoad}kN/m2, Finish=${inputs.floorFinish}kN/m2
-    - Wall Load: Height=${inputs.wallHeight}m, Thick=${inputs.wallThickness}mm
+    - Wall Load: Height=${inputs.wallHeight}m, Thick=${inputs.wallThickness}mm, Density=${inputs.masonryDensity}kN/m3
     - Materials: Concrete M${inputs.fck}, Steel Fe${inputs.fy}
     
     **Calculated Results:**
@@ -47,7 +52,7 @@ export const generateDesignReport = async (
     
     **Task:**
     1. Provide a professional summary of the design adequacy.
-    2. Explicitly mention how the load transfer (Triangular/Trapezoidal/One-way) affects the design.
+    2. Explicitly mention how the load transfer (Triangular/Trapezoidal/One-way) AND point loads affect the design.
     3. If the beam is Over-Reinforced, strongly suggest increasing depth or width.
     4. Comment on the shear capacity and stirrup spacing.
     5. Provide 3-4 bullet points on detailing (anchorage length, lap length, cover).
